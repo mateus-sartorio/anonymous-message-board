@@ -41,10 +41,10 @@ suite('Functional Tests', function() {
           .request(server)
           .keepOpen()
           .get(`/api/threads/${BOARD}`)
-          .end((_err, secondResponse) => {
-            assert.equal(secondResponse.status, 200);
+          .end((_err, res) => {
+            assert.equal(res.status, 200);
 
-            const output = secondResponse.body;
+            const output = res.body;
 
             assert.isArray(output);
 
@@ -77,10 +77,10 @@ suite('Functional Tests', function() {
       .request(server)
       .keepOpen()
       .get(`/api/threads/${BOARD}`)
-      .end((_err, secondResponse) => {
-        assert.equal(secondResponse.status, 200);
+      .end((_err, res) => {
+        assert.equal(res.status, 200);
 
-        const output = secondResponse.body;
+        const output = res.body;
 
         assert.isArray(output);
         assert.isAtMost(output.length, 10);
@@ -110,10 +110,10 @@ suite('Functional Tests', function() {
       .request(server)
       .keepOpen()
       .get(`/api/threads/${BOARD}`)
-      .end((_err, secondResponse) => {
-        assert.equal(secondResponse.status, 200);
+      .end((_err, res) => {
+        assert.equal(res.status, 200);
 
-        const output = secondResponse.body;
+        const output = res.body;
 
         thread_id = output[0]._id;
 
@@ -128,10 +128,10 @@ suite('Functional Tests', function() {
           .keepOpen()
           .delete(`/api/threads/${BOARD}`)
           .send(input)
-          .end((_err, secondResponse) => {
-            assert.equal(secondResponse.status, 200);
+          .end((_err, res) => {
+            assert.equal(res.status, 200);
     
-            const output = secondResponse.text;
+            const output = res.text;
     
             assert.strictEqual(output, "incorrect password");
   
@@ -146,10 +146,10 @@ suite('Functional Tests', function() {
       .request(server)
       .keepOpen()
       .get(`/api/threads/${BOARD}`)
-      .end((_err, secondResponse) => {
-        assert.equal(secondResponse.status, 200);
+      .end((_err, res) => {
+        assert.equal(res.status, 200);
 
-        const output = secondResponse.body;
+        const output = res.body;
 
         thread_id = output[0]._id;
 
@@ -164,10 +164,10 @@ suite('Functional Tests', function() {
           .keepOpen()
           .delete(`/api/threads/${BOARD}`)
           .send(input)
-          .end((_err, secondResponse) => {
-            assert.equal(secondResponse.status, 200);
+          .end((_err, res) => {
+            assert.equal(res.status, 200);
     
-            const output = secondResponse.text;
+            const output = res.text;
     
             assert.strictEqual(output, "success");
   
@@ -196,10 +196,10 @@ suite('Functional Tests', function() {
           .request(server)
           .keepOpen()
           .get(`/api/threads/${BOARD}`)
-          .end((_err, secondResponse) => {
-            assert.equal(secondResponse.status, 200);
+          .end((_err, res) => {
+            assert.equal(res.status, 200);
     
-            const output = secondResponse.body;
+            const output = res.body;
     
             thread_id = output[0]._id;
     
@@ -213,10 +213,10 @@ suite('Functional Tests', function() {
               .keepOpen()
               .put(`/api/threads/${BOARD}`)
               .send(input)
-              .end((_err, secondResponse) => {
-                assert.equal(secondResponse.status, 200);
+              .end((_err, res) => {
+                assert.equal(res.status, 200);
         
-                const output = secondResponse.text;
+                const output = res.text;
         
                 assert.strictEqual(output, "reported");
       
@@ -227,45 +227,248 @@ suite('Functional Tests', function() {
   });
 
   test("Creating a new reply: POST request to /api/replies/{board}", function (done) {
-    const input = {
-      delete_password: DELETE_PASSWORD,
-      text: "test",
-      board: BOARD
-    };
-    
     chai
       .request(server)
       .keepOpen()
-      .post(`/api/replies/${BOARD}`)
-      .send(input)
+      .get(`/api/threads/${BOARD}`)
       .end((_err, res) => {
         assert.equal(res.status, 200);
+
+        const output = res.body;
+
+        thread_id = output[0]._id;
+
+        const input = {
+          thread_id,
+          text: "test",
+          delete_password: DELETE_PASSWORD
+        };
 
         chai
           .request(server)
           .keepOpen()
-          .get(`/api/replies/${BOARD}`)
-          .end((_err, secondResponse) => {
-            assert.equal(secondResponse.status, 200);
+          .post(`/api/replies/${BOARD}`)
+          .send(input)
+          .end((_err, res) => {
+            assert.equal(res.status, 200);
 
-            const output = secondResponse.body;
+            chai
+              .request(server)
+              .keepOpen()
+              .get(`/api/replies/${BOARD}?thread_id=${thread_id}`)
+              .end((_err, res) => {
+                assert.equal(res.status, 200);
+        
+                const output = res.body;
 
-            assert.isArray(output);
+                assert.property(output, '_id');
 
-            output.forEach(thread => {
-              assert.property(thread, '_id');
+                assert.property(output, 'created_on');
+                assert.property(output, 'bumped_on');
 
-              assert.property(thread, 'text');
-              assert.strictEqual(thread.text, input.text);
+                assert.isArray(output.replies);
+        
+                output.replies.forEach(reply => {
+                  assert.property(reply, '_id');
 
-              assert.property(thread, 'created_on');
-              assert.property(thread, 'bumped_on');
-              assert.strictEqual(thread.created_on, thread.bumped_on);
+                  assert.property(reply, 'created_on');
+                  assert.property(reply, 'bumped_on');
+        
+                  assert.property(reply, 'text');
+                  assert.strictEqual(reply.text, input.text);
+                });
+      
+                done();
+              });
+          });
+      });
+  });
 
-              assert.isArray(thread.replies);
-            });
+  test("Viewing a single thread with all replies: GET request to /api/replies/{board}", function (done) {
+    chai
+      .request(server)
+      .keepOpen()
+      .get(`/api/threads/${BOARD}`)
+      .end((_err, res) => {
+        assert.equal(res.status, 200);
+
+        const output = res.body;
+
+        thread_id = output[0]._id;
+
+        const input = {
+          thread_id,
+          text: "test",
+          delete_password: DELETE_PASSWORD
+        };
+
+        chai
+          .request(server)
+          .keepOpen()
+          .get(`/api/replies/${BOARD}?thread_id=${thread_id}`)
+          .end((_err, res) => {
+            assert.equal(res.status, 200);
     
+            const output = res.body;
+
+            assert.property(output, '_id');
+
+            assert.property(output, 'created_on');
+            assert.property(output, 'bumped_on');
+
+            assert.isArray(output.replies);
+    
+            output.replies.forEach(reply => {
+              assert.property(reply, '_id');
+
+              assert.property(reply, 'created_on');
+              assert.property(reply, 'bumped_on');
+    
+              assert.property(reply, 'text');
+              assert.strictEqual(reply.text, input.text);
+            });
+  
             done();
+          });
+      });
+  });
+
+  test("Deleting a reply with the incorrect password: DELETE request to /api/replies/{board} with an invalid delete_password", function (done) {
+    chai
+      .request(server)
+      .keepOpen()
+      .get(`/api/threads/${BOARD}`)
+      .end((_err, res) => {
+        assert.equal(res.status, 200);
+
+        const output = res.body;
+
+        thread_id = output[0]._id;
+
+        chai
+          .request(server)
+          .keepOpen()
+          .get(`/api/replies/${BOARD}?thread_id=${thread_id}`)
+          .end((_err, res) => {
+            assert.equal(res.status, 200);
+
+            const output = res.body;
+
+            const reply_id = output.replies[0]._id;
+
+            const input = {
+              thread_id,
+              reply_id,
+              delete_password: "incorrect_password"
+            };
+    
+            chai
+              .request(server)
+              .keepOpen()
+              .delete(`/api/replies/${BOARD}`)
+              .send(input)
+              .end((_err, res) => {
+                assert.equal(res.status, 200);
+        
+                const output = res.text;
+    
+                assert.strictEqual(output, "incorrect password");
+    
+                done();
+              });
+          });
+      });
+  });
+
+  test("Deleting a reply with the correct password: DELETE request to /api/replies/{board} with a valid delete_password", function (done) {
+    chai
+      .request(server)
+      .keepOpen()
+      .get(`/api/threads/${BOARD}`)
+      .end((_err, res) => {
+        assert.equal(res.status, 200);
+
+        const output = res.body;
+
+        thread_id = output[0]._id;
+
+        chai
+          .request(server)
+          .keepOpen()
+          .get(`/api/replies/${BOARD}?thread_id=${thread_id}`)
+          .end((_err, res) => {
+            assert.equal(res.status, 200);
+
+            const output = res.body;
+
+            const reply_id = output.replies[0]._id;
+
+            const input = {
+              thread_id,
+              reply_id,
+              delete_password: DELETE_PASSWORD
+            };
+    
+            chai
+              .request(server)
+              .keepOpen()
+              .delete(`/api/replies/${BOARD}`)
+              .send(input)
+              .end((_err, res) => {
+                assert.equal(res.status, 200);
+        
+                const output = res.text;
+    
+                assert.strictEqual(output, "success");
+    
+                done();
+              });
+          });
+      });
+  });
+
+  test("Reporting a reply: PUT request to /api/replies/{board}", function (done) {
+    chai
+      .request(server)
+      .keepOpen()
+      .get(`/api/threads/${BOARD}`)
+      .end((_err, res) => {
+        assert.equal(res.status, 200);
+
+        const output = res.body;
+
+        thread_id = output[0]._id;
+
+        chai
+          .request(server)
+          .keepOpen()
+          .get(`/api/replies/${BOARD}?thread_id=${thread_id}`)
+          .end((_err, res) => {
+            assert.equal(res.status, 200);
+
+            const output = res.body;
+
+            const reply_id = output.replies[0]._id;
+
+            const input = {
+              thread_id,
+              reply_id,
+            };
+    
+            chai
+              .request(server)
+              .keepOpen()
+              .put(`/api/replies/${BOARD}`)
+              .send(input)
+              .end((_err, res) => {
+                assert.equal(res.status, 200);
+        
+                const output = res.text;
+    
+                assert.strictEqual(output, "reported");
+    
+                done();
+              });
           });
       });
   });
