@@ -128,7 +128,7 @@ module.exports = function (app) {
 
       if(delete_password === threadToDelete.delete_password) {
         try {
-          await threadToDelete.remove();
+          dbBoard.threads.pull(thread_id);
         }
         catch(e) {
           res.send("error");
