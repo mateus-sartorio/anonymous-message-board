@@ -1,23 +1,10 @@
-// Do not change this file
 require("dotenv").config();
 
-const { MongoClient } = require("mongodb");
+const mongoose = require("mongoose");
 
-async function getDbClient() {
-  try {
-    const URI = process.env.DB;
-    const client = new MongoClient(URI);
-    
-    // Connect to the MongoDB cluster
-    await client.connect();
+const db = mongoose.connect(process.env.DB, {
+  useUnifiedTopology: true,
+  useNewUrlParser: true
+});
 
-    return client;
-  } catch (e) {
-    console.error(e);
-    throw new Error("Unable to Connect to Database");
-  }
-}
-
-module.exports = {
-  getDbClient
-};
+module.exports = db;

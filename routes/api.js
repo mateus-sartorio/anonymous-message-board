@@ -1,225 +1,159 @@
 'use strict';
 
 const crypto = require("crypto");
-const { ObjectId } = require("mongodb");
+const { BoardModel, ThreadModel, ReplyModel } = require("../models");
 
-function getDbCollections(dbClient, isTest) {
-  const dbName = isTest ? "anonymous-message-board-test" : "anonymous-message-board";
-        
-  const database = dbClient.db(dbName);
-
-  const threadsCollection = database.collection("thread");
-  const repliesCollection = database.collection("replies");
-
-  return { threadsCollection, repliesCollection };
-}
-
-module.exports = function (app, dbClient) {
+module.exports = function (app) {
   app
     .route('/api/threads/:board')
     .get(async (req, res) => {
       const { board } = req.params;
 
-      const isTest = req.header("test");
-      const { threadsCollection, repliesCollection } = getDbCollections(dbClient, isTest);
+      const dbBoard = await BoardModel.findOne({ name: board });
 
-      const threadsResponse = await threadsCollection
-        .find({ board })
-        .sort({ createdOn: -1 })
-        .toArray();
-
-      const repliesResponses = await Promise.all(threadsResponse.map(tr => {
-        const threadId = new ObjectId(tr._id);
-
-        return repliesCollection
-          .find({ threadId })
-          .sort({ createdOn: -1 })
-          .toArray();
-        })
-      );
-
-      const responsePayload = threadsResponse.map((thread, index) => ({
-        _id: thread._id,
-        text: thread.text,
-        created_on: thread.createdOn,
-        bumped_on: thread.updatedOn,
-        replies: repliesResponses[index].map(reply => ({
-          _id: reply._id,
-          text: reply.text,
-          created_on: reply.createdOn,
-        })),
-        replycount: repliesResponses[index].length
+      const threads = dbBoard.threads.map(thread => ({
+        ...thread,
+        replycount: thread.replies.length
       }));
 
-      res.status(200).json(responsePayload);
+      res.json(threads);
     })
     .post(async (req, res) => {
-      const { board } = req.params;
-      const { text, delete_password } = req.body;
+      const { board: urlBoard } = req.params;
+      const { board: bodyBoard, text, delete_password } = req.body;
 
-      const isTest = req.header("test");
-      const { threadsCollection } = getDbCollections(dbClient, isTest);
+      const board = bodyBoard ?? urlBoard;
 
       const deletePasswordHashed = crypto.createHash('md5').update(delete_password).digest('hex');
 
-      await threadsCollection.insertOne({
-        board,
+      const newThread = new ThreadModel({
         text,
-        deletePasswordHashed,
-        createdOn: new Date(),
-        updatedOn: new Date(),
-        reportCount: 0
+        delete_password: deletePasswordHashed,
+        replies: []
       });
 
-      res.status(302).redirect(`/b/${board}/`);
+      const dbBoard = await BoardModel.findOne({ name: board });
+
+      if(!dbBoard) {
+        const newBoard = new BoardModel({
+          name: board,
+          threads: [ newThread ]
+        });
+
+        await newBoard.save();
+      }
+      else {
+        dbBoard.threads.push(newThread);
+        await dbBoard.save();
+      }
+
+      res.json(newThread);
     })
     .put(async (req, res) => {
-      const isTest = req.header("test");
-      const { threadsCollection } = getDbCollections(dbClient, isTest);
+      const { board } = req.params;
+      const { report_id } = req.body;
       
-      const { thread_id } = req.body;
+      const dbBoard = await BoardModel.findOne({ name: board });
 
-      const threadId = new ObjectId(thread_id);
+      const reportedThread = dbBoard.threads.id(report_id);
+      reportedThread.reported = true;
+      reportedThread.bumped_on = new Date();
 
-      await threadsCollection.updateOne(
-        {
-          _id: threadId,
-        },
-        {
-          updatedOn: new Date(),
-          $inc: {
-            reportCount: 1
-          }
-        }
-      );
+      await dbBoard.save();
 
-      res.status(200).send("reported");
+      res.send("reported");
     })
     .delete(async (req, res) => {
-      const { board, thread_id, delete_password } = req.body;
+      const { board: urlBoard } = req.params;
+      const { board: bodyBoard, thread_id, delete_password } = req.body;
 
-      const isTest = req.header("test");
-      const { threadsCollection, repliesCollection } = getDbCollections(dbClient, isTest);
+      const board = bodyBoard ?? urlBoard;
 
-      const threadId = new ObjectId(thread_id);
+      const dbBoard = await BoardModel.findOne({ name: board });
 
-      const thread = await threadsCollection.findOne({ _id: threadId });
-
-      if(!thread) {
-        res.status(502).end();
-        return;
-      }
+      const threadToDelete = dbBoard.threads.id(thread_id);
 
       const deletePasswordHashed = crypto.createHash('md5').update(delete_password).digest('hex');
 
-      if(deletePasswordHashed === thread.deletePasswordHashed) {
-        await Promise.all([ threadsCollection.deleteOne({ _id: threadId }), repliesCollection.deleteMany({ threadId }) ]);
+      if(deletePasswordHashed === threadToDelete.delete_password) {
+        await threadToDelete.remove()
       }
       else {
-        res.status(200).send("incorrect password");
+        res.send("incorrect password");
         return;
       }
 
-      res.status(200).send("success");
+      dbBoard.save();
+
+      res.send("success");
     });
     
   app
     .route('/api/replies/:board')
     .get(async (req, res) => {
+      const { board } = req.params;
       const { thread_id } = req.query;
 
-      const threadId = new ObjectId(thread_id);
+      const dbBoard = await BoardModel.findOne({ name: board });
 
-      const isTest = req.header("test");
-      const { threadsCollection, repliesCollection } = getDbCollections(dbClient, isTest);
+      const thread = dbBoard.threads.id(thread_id);
 
-      const threadResponse = await threadsCollection.findOne({ _id: threadId });
-
-      const repliesResponse = await repliesCollection
-        .find({ threadId })
-        .sort({ createdOn: -1 })
-        .toArray();
-
-      const responsePayload = {
-        _id: threadResponse._id,
-        text: threadResponse.text,
-        created_on: threadResponse.createdOn,
-        bumped_on: threadResponse.updatedOn,
-        replies: repliesResponse.map(reply => ({
-          _id: reply._id,
-          text: reply.text,
-          created_on: reply.createdOn,
-        }))
-      };
-      
-      res.status(200).json(responsePayload);
+      res.json(thread);
     })
     .post(async (req, res) => {
+      const { board } = req.params;
       const { thread_id, text, delete_password } = req.body;
 
-      const isTest = req.header("test");
-      const { threadsCollection, repliesCollection } = getDbCollections(dbClient, isTest);
-
-      const threadId = new ObjectId(thread_id);
-
-      const thread = await threadsCollection.findOne({ _id: threadId });
-
       const deletePasswordHashed = crypto.createHash('md5').update(delete_password).digest('hex');
 
-      await repliesCollection.insertOne({
-        threadId,
-        board: thread.board,
+      const newReply = new ReplyModel({
         text,
-        createdOn: new Date(),
-        updatedOn: new Date(),
-        deletePasswordHashed,
-        reportCount: 0
+        delete_password: deletePasswordHashed
       });
+      
+      const dbBoard = await BoardModel.findOne({ name: board });
 
-      res.status(302).redirect(`/b/${thread.board}/${thread_id}`);
+      const threadToAddReply = dbBoard.threads.id(thread_id);
+      threadToAddReply.bumped_on = new Date();
+      threadToAddReply.replies.push(newReply);
+
+      const result = await dbBoard.save();
+
+      res.json(result);
     })
     .put(async (req, res) => {
-      const { reply_id } = req.body;
+      const { board } = req.params;
+      const { thread_id, reply_id } = req.body;
 
-      const replyId = new ObjectId(reply_id);
+      const dbBoard = await BoardModel.findOne({ name: board });
+      const thread = dbBoard.threads.id(thread_id);
+      const reply = thread.replies.id(reply_id);
 
-      const isTest = req.header("test");
-      const { repliesCollection } = getDbCollections(dbClient, isTest);
+      reply.reported = true;
+      reply.bumped_on = new Date();
 
-      await repliesCollection.updateOne(
-        {
-          _id: replyId,
-        },
-        {
-          updatedOn: new Date(),
-          $inc: {
-            reportCount: 1
-          }
-        }
-      );
+      dbBoard.save();
 
-      res.status(200).send("reported");
+      res.send("reported");
     })
     .delete(async (req, res) => {
-      const { reply_id, delete_password } = req.body;
+      const { board } = req.params;
+      const { thread_id, reply_id, delete_password } = req.body;
 
-      const isTest = req.header("test");
-      const { repliesCollection } = getDbCollections(dbClient, isTest);
-
-      const replyId = new ObjectId(reply_id);
+      const dbBoard = await BoardModel.findOne({ name: board });
+      const thread = dbBoard.threads.id(thread_id);
+      const reply = thread.replies.id(reply_id);
 
       const deletePasswordHashed = crypto.createHash('md5').update(delete_password).digest('hex');
 
-      const reply = await repliesCollection.findOne({ _id: replyId });
-
-      if(deletePasswordHashed === reply.deletePasswordHashed) {
-        await repliesCollection.deleteOne({ _id: replyId });
+      if(deletePasswordHashed === reply.delete_password) {
+        reply.remove();
       }
       else {
-        res.status(200).send("incorrect password");
+        res.send("incorrect password");
         return;
       }
 
-      res.status(200).send("success");
+      res.send("success");
     });
 };
