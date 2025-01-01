@@ -217,12 +217,13 @@ module.exports = function (app) {
 
       try {
         await dbBoard.save();
-        res.redirect(`/b/${board}/${thread_id}`);
       }
       catch(e) {
         res.send("error");
         return;
       }
+
+      res.redirect(`/b/${board}/${thread_id}`);
     })
     .put(async (req, res) => {
       const { board } = req.params;
@@ -266,8 +267,10 @@ module.exports = function (app) {
       const reply = thread.replies.id(reply_id);
 
       if(delete_password === reply.delete_password) {
+        reply.text = "[deleted]";
+
         try {
-          await reply.remove();
+          await dbBoard.save();
         }
         catch(e) {
           res.send("error");
