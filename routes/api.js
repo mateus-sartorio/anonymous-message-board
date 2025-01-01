@@ -87,8 +87,10 @@ module.exports = function (app) {
       res.redirect(`/b/${board}`);
     })
     .put(async (req, res) => {
-      const { board } = req.params;
-      const { report_id } = req.body;
+      const { board: urlBoard } = req.params;
+      const { board: bodyBoard, thread_id } = req.body;
+
+      const board = bodyBoard ?? urlBoard;
       
       const dbBoard = await Board.findOne({ name: board });
 
@@ -97,7 +99,13 @@ module.exports = function (app) {
         return;
       }
 
-      const reportedThread = dbBoard.threads.id(report_id);
+      const reportedThread = dbBoard.threads.id(thread_id);
+
+      if(!reportedThread) {
+        res.send("error");
+        return;
+      }
+
       reportedThread.reported = true;
       reportedThread.bumped_on = new Date();
 
