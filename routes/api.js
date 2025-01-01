@@ -84,7 +84,7 @@ module.exports = function (app) {
         }
       }
 
-      res.redirect(`/b/${board}`);
+      res.end();
     })
     .put(async (req, res) => {
       const { board: urlBoard } = req.params;
@@ -231,7 +231,7 @@ module.exports = function (app) {
         return;
       }
 
-      res.redirect(`/b/${board}/${thread_id}`);
+      res.end();
     })
     .put(async (req, res) => {
       const { board } = req.params;
